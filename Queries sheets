@@ -1,0 +1,138 @@
+/* Udacity 1st project: Investigate a Relational Database */
+
+/* Question 1:
+We want to understand more about the movies that families are watching. 
+The following categories are considered family movies: Animation, Children, Classics, Comedy, Family and Music.
+For each category, there are movies who have maximum rentals. 
+Create a query to get a percentage of the total rentals for each category contributed by the rentals of the highest renting movies.
+
+Solution: */
+
+WITH common_table
+AS (SELECT DISTINCT
+  f.title film_name,
+  c.name category_name,
+  COUNT(*) rental_count
+FROM category c
+JOIN film_category fc
+  ON c.category_id = fc.category_id
+JOIN film f
+  ON f.film_id = fc.film_id
+JOIN inventory i
+  ON i.film_id = f.film_id
+JOIN rental r
+  ON r.inventory_id = i.inventory_id
+WHERE c.name IN ('Animation', 'Children', 'Classics', 'Comedy', 'Family', 'Music')
+GROUP BY 1,2)
+
+SELECT DISTINCT
+  c.category_name "category name",
+  COUNT(rental_count) AS "no movies with max rentals",
+  rental_count AS "category max rental",
+  rental_count * COUNT(rental_count) "rental contribution from max movies",
+  (rental_count * COUNT(rental_count)) / total_rental_for_category AS "% contribution from maximum movies to total",
+  total_rental_for_category "category total"
+FROM common_table c
+JOIN (SELECT
+  category_name,
+  MAX(rental_count) max_rental_count_per_category
+FROM common_table
+GROUP BY 1) s
+  ON c.category_name = s.category_name
+  AND c.rental_count = s.max_rental_count_per_category
+JOIN (SELECT
+  category_name,
+  SUM(rental_count) total_rental_for_category
+FROM common_table
+GROUP BY category_name) s1
+  ON s1.category_name = c.category_name
+GROUP BY 1,3,6
+ORDER BY 5 DESC;
+
+/*
+Question 2:
+We would like to know the highest sales for each renting month for each store.
+Create a query to find the month with the highest sales for each store resulting from movies rented in a particular month.
+Your query should contain the month name, the store id and the total payments made resulting from those rentals
+Solution: */
+
+SELECT DISTINCT
+  TO_CHAR(r.rental_date, 'Month') "Month name",
+  s.store_id "Store ID",
+  SUM(p.amount) "Total sales from rentals"
+FROM category c
+JOIN film_category fc
+  ON c.category_id = fc.category_id
+JOIN film f
+  ON f.film_id = fc.film_id
+JOIN inventory i
+  ON i.film_id = f.film_id
+JOIN rental r
+  ON r.inventory_id = i.inventory_id
+JOIN payment p
+  ON p.customer_id = r.customer_id
+JOIN staff s
+  ON r.staff_id = s.staff_id
+GROUP BY 1,2
+ORDER BY 3 DESC
+
+
+
+/*
+Question 3
+
+Set 2 Question 3
+
+Finally, for each of these top 10 paying customers, I would like to find out the difference across their monthly payments during 2007.
+Please go ahead and write a query to compare the payment amounts in each successive month. Repeat this for each of these 10 paying customers. 
+Also, it will be tremendously helpful if you can identify the customer name who paid the most difference in terms of payments.
+
+Solution: */
+
+SELECT *
+FROM (SELECT TO_CHAR(pay_month,'Month') "Payment Month", customer_name "Customer name", pay_count "Total payments made", pay_sum "Total amount of payment made", COALESCE(LAG(pay_sum) OVER (PARTITION BY customer_name ORDER BY pay_month),0) "Total payment made Last month", pay_sum - COALESCE (LAG(pay_sum) OVER (PARTITION BY customer_name ORDER BY pay_month),0) AS "Month on Month Difference"
+    FROM (SELECT date_trunc('month',payment_date) pay_month, first_name||' '||last_name customer_name, count(*) pay_count, sum(amount) pay_sum
+      FROM customer c
+      JOIN payment p
+      ON c.customer_id=p.customer_id
+      WHERE c.customer_id in ( SELECT customer_id FROM(SELECT first_name||' '||last_name, c.customer_id customer_id, SUM (amount)
+    	FROM customer c
+		JOIN payment p
+		ON c.customer_id=p.customer_id
+		WHERE date_part('year',payment_date) = 2007
+		GROUP BY 1,2
+		ORDER BY 3 DESC
+		LIMIT 10)sub
+	     )
+      GROUP BY 1,2
+      ORDER BY 2) sub_1
+  ORDER BY 2, pay_month) sub_2
+WHERE "Month on Month Difference" > 0;
+
+
+/*
+Question 4
+
+Set 2 Question 2
+
+We would like to know who were our top 10 paying customers, how many payments they made on a monthly basis during 2007, and what was the amount of the monthly payments. 
+Can you write a query to capture the customer name, month and year of payment, and total payment amount for each month by these top 10 paying customers?
+
+Solution: */
+
+SELECT TO_CHAR(date_trunc('month',payment_date),'Month') "Pay Month", first_name||' '||last_name "Customer Full Name", count(*) "Number of rentals", sum(amount) "Total payment made"
+FROM customer c
+JOIN payment p
+ON c.customer_id=p.customer_id
+WHERE c.customer_id IN (SELECT customer_id 
+        FROM( SELECT first_name||' '||last_name, c.customer_id customer_id, sum (amount)
+	FROM customer c
+	JOIN payment p
+	ON c.customer_id=p.customer_id
+	WHERE date_part('year',payment_date) = 2007
+	GROUP BY 1,2
+	ORDER BY 3 DESC
+	LIMIT 10)sub
+      )
+GROUP BY 1,2
+ORDER BY 2;
